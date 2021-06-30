@@ -11,10 +11,11 @@
 
 import re
 import urllib
-from htmlentitydefs import name2codepoint
-from BeautifulSoup import BeautifulSoup
+import urllib.parse
+from html.entities import name2codepoint
+from bs4 import BeautifulSoup
 
-from browser import Browser, BrowserError
+from .browser import Browser, BrowserError
 
 class SearchError(Exception):
     """
@@ -121,7 +122,7 @@ class GoogleSearch(object):
             try:
                 num = float(interval)
             except ValueError:
-                raise SearchError, "Wrong parameter to first_indexed_in_previous: %s" % (str(interval))
+                raise SearchError("Wrong parameter to first_indexed_in_previous: %s" % (str(interval)))
             self._first_indexed_in_previous = 'm' + str(interval)
     
     first_indexed_in_previous = property(_get_first_indexed_in_previous, _set_first_indexed_in_previous, doc="possible values: day, week, month, year, or a float value of months")
@@ -150,9 +151,11 @@ class GoogleSearch(object):
         page = self._get_results_page()
         #search_info = self._extract_info(page)
         results = self._extract_results(page)
+        
         search_info = {'from': self.results_per_page*self._page,
                        'to': self.results_per_page*self._page + len(results),
                        'total': MAX_VALUE}
+        
         if not self.results_info:
             self.results_info = search_info
             if self.num_results == 0:
@@ -186,7 +189,7 @@ class GoogleSearch(object):
             else:
                 url = GoogleSearch.NEXT_PAGE_1
 
-        safe_url = [url % { 'query': urllib.quote_plus(self.query),
+        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query),
                            'start': self._page * self._results_per_page,
                            'num': self._results_per_page,
                            'tld' : self._tld,
@@ -203,10 +206,9 @@ class GoogleSearch(object):
         
         try:
             page = self.browser.get_page(safe_url)
-        except BrowserError, e:
-            raise SearchError, "Failed getting %s: %s" % (e.url, e.error)
-
-        return BeautifulSoup(page)
+        except BrowserError as e:
+            raise SearchError("Failed getting %s: %s" % (e.url, e.error))
+        return BeautifulSoup(page, features="lxml")
 
     def _extract_info(self, soup):
         empty_info = {'from': 0, 'to': 0, 'total': 0}
@@ -226,8 +228,10 @@ class GoogleSearch(object):
         return {'from': int(matches.group(1)), 'to': int(matches.group(2)), 'total': int(matches.group(3))}
 
     def _extract_results(self, soup):
-        results = soup.findAll('li', {'class': 'g'})
+        #results = soup.find_all('li', {'class': 'g'})
+        results = soup.find_all("div", class_="ezO2md")
         ret_res = []
+        
         for result in results:
             eres = self._extract_result(result)
             if eres:
@@ -252,11 +256,22 @@ class GoogleSearch(object):
         url = title_a['href']
         match = re.match(r'/url\?q=(http[^&]+)&', url)
         if match:
-            url = urllib.unquote(match.group(1))
+            url = urllib.parse.unquote(match.group(1))
         return title, url
 
     def _extract_description(self, result):
-        desc_div = result.find('div', {'class': re.compile(r'\bs\b')})
+        #desc_div = result.find('div', {'class': re.compile(r'\bs\b')})
+        span_ = result.find("span", class_="qXLe6d FrIlee")
+        if not span_:
+            return None
+        
+        
+        results = ""
+        for current in span_.children:
+            if current.string:
+                results += current.string
+        
+        return results
         if not desc_div:
             self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
             return None
